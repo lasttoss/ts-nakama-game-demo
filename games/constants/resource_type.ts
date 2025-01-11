@@ -1,0 +1,13 @@
+enum ResourceType {
+    MONEY_TYPE = 1,
+    SEED_TYPE = 2,
+    CONSUME_TYPE = 3,
+    ENERGY_TYPE = 4,
+    FRUIT_REWARD_TYPE = 5,
+    OPEN_FRUIT_REWARD_TYPE = 6,
+    BUY_PACKAGE_COIN = 7,
+    JACKPOT_777 = 8,
+    MINI_GAME_CHEST_TYPE = 9,
+    MINI_GAME_TICKET_TYPE = 10,
+    HAMMER_TYPE = 11,
+}

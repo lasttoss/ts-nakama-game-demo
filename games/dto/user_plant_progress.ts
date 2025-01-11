@@ -1,0 +1,17 @@
+interface UserPlantProgressDTO {
+    plantId: number | 0,
+    itemId: string | "",
+    currentFruit: number,
+    currentExp: number | 0,
+    maxExp: number | 0,
+    status: number | 0,
+    currentLevel: number | 0,
+    wateringCan: number | 0,
+    nextTimeGetADropOfWater: number | 0,
+    currentTime: number | 0,
+    protectCoin: boolean,
+    protectWater: boolean,
+    protectFruit: boolean,
+    shieldTimes: number | 0,
+    nextTimeToPick: number | 0,
+}

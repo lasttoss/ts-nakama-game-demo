@@ -1,0 +1,20 @@
+console:
+  password: "12345678"
+  max_message_size_bytes: 409600
+logger:
+  level: "DEBUG"
+runtime:
+  js_entrypoint: "build/index.js"
+  http_key: "5ec27fcb-3e59-4557-b0a6-ed7834379f81"
+session:
+  token_expiry_sec: 7200 # 1 hours
+  refresh_token_expiry_sec: 5184000
+  single_socket: true
+  single_match: true
+socket:
+  server_key: "534B14E0-7235-44AC-84CB-7C265EAC147E"
+  max_message_size_bytes: 4096 # reserved buffer
+  max_request_size_bytes: 131072
+  idle_timeout_ms: 60000
+database:
+  max_open_conns: 0

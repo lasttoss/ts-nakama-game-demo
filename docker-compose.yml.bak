@@ -1,0 +1,31 @@
+version: '3'
+services:
+  hh-api:
+    build: .
+    container_name: hh-api
+    env_file:
+      - ./.env
+    entrypoint:
+      - "/bin/sh"
+      - "-ecx"
+      - >
+        /nakama/nakama migrate up --database.address postgres://${DB_URI}/${DB_DATABASE} &&
+        exec /nakama/nakama --config /nakama/data/${DATA_ENV} --database.address postgres://${DB_URI}/${DB_DATABASE}
+    expose:
+      - "7349"
+      - "7350"
+      - "7351"
+    healthcheck:
+      test: [ "CMD", "/nakama/nakama", "healthcheck" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "7349:7349"
+      - "7350:7350"
+      - "7351:7351"
+    restart: unless-stopped
+
+volumes:
+  data:
+    driver: local

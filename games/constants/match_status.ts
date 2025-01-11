@@ -1,0 +1,44 @@
+// The complete set of opcodes used for communication between clients and server.
+enum OpCode {
+    START = 0,
+    USER_INFO = 1,
+    SOW_SEED = 2,
+    PICKING_FRUITS = 3,
+    SPRAY_WATER = 4,
+    UPDATE_PROGRESS = 5,
+    UPDATE_SPRAY_WATER = 6,
+    GET_CURRENT_TIME_SERVER = 7,
+    PICKING_TO_PROTECT = 9,
+    GET_CURRENT_SEASON_LEADERBOARD = 10,
+    USE_USER_INVENTORY = 11,
+    OPP_ACCOUNT_INFO = 12,
+    STEAL_OPPONENT = 13,
+    STEAL_OPPONENT_RESPONSE = 14,
+    SPIN = 15,
+    SPIN_RESPONSE = 16,
+    CLAIM_FRIEND_REWARD = 17,
+    CLAIM_FRIEND_REWARD_RESPONSE = 18,
+    BUY_SHOP = 19,
+    CLAIM_MAILBOXES = 20,
+    SEND_FRIEND_REWARD = 21,
+    MINI_GAME_FLIP_FLOP_INIT = 23,
+    MINI_GAME_FLIP_FLOP_START = 24,
+    MINI_GAME_FLIP_FLOP_PLAYING = 25,
+    MINI_GAME_FLIP_FLOP_END = 26,
+    MINI_GAME_FLIP_FLOP_INFO = 27,
+    MINI_GAME_FLIP_FLOP_RESULT = 28,
+    CLAIM_ENERGY_PIGGY_BANK = 29,
+    INIT_RESOURCES = 998,
+    ERROR = 999,
+}
+
+enum PlanStatus {
+    CAN_SOW = 0,
+    IS_GROWING = 1,
+    COMPLETED
+}
+
+enum OpponentMatchStatus {
+    CREATED = 0,
+    COMPLETED = 1
+}

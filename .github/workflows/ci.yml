@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,10 +19,22 @@ jobs:
       - run: npm run build
       - name: Unit tests against the built bundle
         run: npm test
+      - name: Pull the Nakama image, with retries
+        # Docker Hub rate limits anonymous pulls and a CI runner shares its address with everyone
+        # else on that host, so a pull that fails here is not a broken repository.
+        run: |
+          for i in 1 2 3; do
+            docker pull heroiclabs/nakama:3.32.0 && exit 0
+            echo "pull attempt $i failed, waiting"
+            sleep 20
+          done
+          docker pull heroiclabs/nakama:3.32.0
       - name: The plugin must load in the real Nakama runtime
         run: |
-          docker compose up -d --build
+          docker compose up -d --build --wait --wait-timeout 240
           node scripts/smoke.mjs 127.0.0.1 7350
-      - name: Nakama logs
+      - name: What is running and what it said
         if: always()
-        run: docker compose logs nakama | tail -50
+        run: |
+          docker compose ps
+          docker compose logs nakama | tail -80

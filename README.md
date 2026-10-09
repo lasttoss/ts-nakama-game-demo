@@ -218,6 +218,13 @@ make chart     # helm lint --strict + helm template
 tests 69 · pass 69 · fail 0
 ```
 
+There is no coverage tool, and that is a measured conclusion rather than a preference: `c8` was added, run,
+and reported 0% for every file, because these tests run `build/index.js` inside a `vm` context and V8
+coverage does not see a script compiled that way. Measuring the bundle would mean importing it as a module,
+which is exactly what the `outFile` build cannot produce - the bundle is one file of global scripts, which
+is the reason the harness is a VM at all. `c8` was removed again rather than left reporting a zero that
+looks like untested code.
+
 The first tests cover the plugin's helpers - the clocks, the mappers, the room picker. The rest call the
 handlers the way the match loop calls them: `nk`, logger, state, dispatcher and message, with storage, the
 clock and the dispatcher in the test's hands. The single-answer fake `nk` the helpers need is not enough

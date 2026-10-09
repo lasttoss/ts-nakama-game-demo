@@ -6,6 +6,7 @@
   "include": ["games"],
 
   "compilerOptions": {
+        "types": ["nakama-runtime"],
     "target": "es5",
     "typeRoots": [
       "./node_modules"

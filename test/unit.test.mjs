@@ -216,3 +216,239 @@ test('mappingToListShop survives an empty item config instead of throwing', () =
   assert.equal(dto.length, 1)
   assert.equal(dto[0].item, undefined)
 })
+
+// ---------------------------------------------------------------------------------------------
+// The handlers: the rules the server runs against storage.
+//
+// These are called the way the match loop calls them - nk, logger, state, dispatcher, message -
+// with storage, the clock and the dispatcher in the test's hands. The fake nk the earlier tests
+// use answers every read with the same object, which is fine for the config repositories on their
+// own; a handler reads four collections at once, so this one answers by collection and key.
+// ---------------------------------------------------------------------------------------------
+
+// gameNk answers storage reads from a nested map - storage[collection][key] - and remembers what is
+// written back, which is how the tests see state the player would see on the next tick.
+function gameNk(ctx, storage, { writes = [], account = { wallet: { coins: 0 } } } = {}) {
+  return {
+    storageRead: (requests) =>
+      requests.flatMap((req) => {
+        const collection = storage[req.collection]
+        if (collection === undefined || collection[req.key] === undefined) return []
+        return [{ value: { data: collection[req.key] } }]
+      }),
+    storageWrite: (requests) => {
+      for (const req of requests) {
+        writes.push(req)
+        if (storage[req.collection] === undefined) storage[req.collection] = {}
+        storage[req.collection][req.key] = req.value.data
+      }
+    },
+    accountGetId: () => account,
+    binaryToString: (data) => data,
+  }
+}
+
+const quietLogger = { error: () => {}, info: () => {}, warn: () => {}, debug: () => {} }
+
+function recordingDispatcher() {
+  const sent = []
+  return { sent, broadcastMessage: (opCode, data) => sent.push({ opCode, data: JSON.parse(data) }) }
+}
+
+// game assembles a player with a plant in the ground and a can, plus the system config a handler
+// needs, and returns everything a test wants to poke at afterwards.
+function game({ now = 1_700_000_000, plant = {}, can = {}, inventory = {}, seeds = null, countdown = null } = {}) {
+  const ctx = load({ now })
+  const storage = {}
+  const writes = []
+  const state = { userId: 'ada', nextTimeGetADropOfWater: now }
+  const dispatcher = recordingDispatcher()
+  const nk = gameNk(ctx, storage, { writes })
+
+  storage[ctx.tableConfigs.USER_PLANT_PROGRESS_COLLECTION] = {
+    [ctx.tableConfigs.USER_PLANT_PROGRESS_KEY]: {
+      plantId: 1, itemId: 'seed-1', currentExp: 0, currentLevel: 1, currentFruit: 0,
+      maxExp: 10, status: ctx.PlanStatus.IS_GROWING, protectCoin: false, protectWater: false,
+      protectFruit: false, shieldTimes: 0, nextTimeToPick: 0, ...plant,
+    },
+  }
+  storage[ctx.tableConfigs.USER_WATERING_CAN_COLLECTION] = {
+    [ctx.tableConfigs.USER_WATERING_CAN_KEY]: { wateringCan: 20, nextTimeGetADropOfWater: now, ...can },
+  }
+  storage[ctx.tableConfigs.USER_INVENTORY_COLLECTION] = { [ctx.tableConfigs.USER_INVENTORY_KEY]: inventory }
+  storage[ctx.tableConfigs.SYSTEM_COLLECTION] = {}
+  if (seeds !== null) storage[ctx.tableConfigs.SYSTEM_COLLECTION][ctx.tableConfigs.SYSTEM_SEED_CONFIG_KEY] = seeds
+  if (countdown !== null) storage[ctx.tableConfigs.SYSTEM_COLLECTION][ctx.tableConfigs.SYSTEM_PICKING_FRUIT_COUNTDOWN_CONFIG] = countdown
+
+  return {
+    ctx, nk, state, dispatcher, storage, writes,
+    plant: () => storage[ctx.tableConfigs.USER_PLANT_PROGRESS_COLLECTION][ctx.tableConfigs.USER_PLANT_PROGRESS_KEY],
+    can: () => storage[ctx.tableConfigs.USER_WATERING_CAN_COLLECTION][ctx.tableConfigs.USER_WATERING_CAN_KEY],
+    errors: () => dispatcher.sent.filter((m) => m.opCode === ctx.OpCode.ERROR).map((m) => m.data),
+    userInfo: () => dispatcher.sent.filter((m) => m.opCode === ctx.OpCode.USER_INFO).map((m) => m.data),
+    sprayWater: (quantity) => ctx.sprayWaterHandle(nk, quietLogger, state, dispatcher, { data: JSON.stringify({ quantity }) }),
+    pickFruit: () => ctx.pickingFruitHandle(nk, quietLogger, state, dispatcher, { data: '{}' }),
+    checkWateringCan: () => ctx.checkWateringCanHandle(nk, quietLogger, state, dispatcher),
+  }
+}
+
+// Errors travel to the client as JSON, and the objects either side of these assertions were made in
+// different VM contexts - the bundle's ErrorMessage makes its own - so they are compared as JSON rather
+// than by prototype, which is what strict deep equality is checking when it says the values have the
+// same structure but are not reference-equal.
+function sameJson(actual, expected) {
+  assert.equal(JSON.stringify(actual), JSON.stringify(expected))
+}
+
+// The two constants the Java side of this project now mirrors. Pinned here because they are the
+// whole rule: five minutes a drop, twenty is full.
+test('the watering can constants are the five minutes and the twenty that the API mirrors', () => {
+  const ctx = load()
+  assert.equal(ctx.EXPIRE_TIME_GET_NEXT_A_DROP_OF_WATER, 5 * 60)
+  assert.equal(ctx.MAX_WATERING_CAN, 20)
+})
+
+// --- the can filling over time -----------------------------------------------------------------
+
+test('a can that has waited gets the drops it waited for', () => {
+  // five, and ten minutes have gone by: three drops, not two - the drop for the interval the anchor
+  // is sitting in is counted as well
+  const g = game({ can: { wateringCan: 5, nextTimeGetADropOfWater: 1_700_000_000 - 600 } })
+
+  g.checkWateringCan()
+
+  assert.equal(g.can().wateringCan, 8)
+  assert.equal(g.can().nextTimeGetADropOfWater, 1_700_000_000 + 300, 'the anchor moves one interval ahead of now')
+  assert.equal(g.state.nextTimeGetADropOfWater, 1_700_000_000 + 300, 'and the match state is told')
+  assert.equal(g.userInfo().length, 1, 'the player is told what they have now')
+})
+
+test('the drops stop at the ceiling however long the wait was', () => {
+  const g = game({ can: { wateringCan: 19, nextTimeGetADropOfWater: 1_700_000_000 - 3_600 } })
+
+  g.checkWateringCan()
+
+  assert.equal(g.can().wateringCan, 20, 'an hour is twelve drops and only one fits')
+  assert.equal(g.can().nextTimeGetADropOfWater, 1_700_000_000 + 300)
+})
+
+test('a full can gets nothing and starts its clock again', () => {
+  const g = game({ can: { wateringCan: 20, nextTimeGetADropOfWater: 1_700_000_000 - 3_600 } })
+
+  g.checkWateringCan()
+
+  assert.equal(g.can().wateringCan, 20)
+  assert.equal(g.can().nextTimeGetADropOfWater, 1_700_000_000 + 300,
+    'an hour spent full is not paid out later: the anchor moves on to now + one interval')
+})
+
+test('a can that is not due yet is not touched at all', () => {
+  const g = game({ can: { wateringCan: 5, nextTimeGetADropOfWater: 1_700_000_000 + 60 } })
+  g.state.nextTimeGetADropOfWater = 1_700_000_000 + 60
+
+  g.checkWateringCan()
+
+  assert.equal(g.can().wateringCan, 5)
+  assert.equal(g.writes.length, 0, 'nothing was written')
+  assert.equal(g.dispatcher.sent.length, 0, 'and nothing was sent')
+})
+
+// Recorded, not fixed: the guard reads the match state and the arithmetic reads the stored row, so
+// a state that is due while storage is not subtracts drops the player never spent. The paths that
+// write the state keep the two within one interval of each other, which is why this cannot happen
+// today and why the test says so rather than the code being changed on a suspicion.
+test('a state that disagrees with storage can take water away', () => {
+  const g = game({ can: { wateringCan: 5, nextTimeGetADropOfWater: 1_700_000_000 + 900 } })
+  g.state.nextTimeGetADropOfWater = 1_700_000_000 // due, according to the match state
+
+  g.checkWateringCan()
+
+  assert.equal(g.can().wateringCan, 3, 'floor(-900/300) + 1 is -2: the can went backwards')
+})
+
+// --- watering a plant --------------------------------------------------------------------------
+
+test('watering takes water out of the can and puts experience in the plant', () => {
+  const g = game({ seeds: [{ plantId: 1, requiredExp: [10, 20] }] })
+
+  g.sprayWater(2)
+
+  assert.equal(g.can().wateringCan, 18)
+  assert.equal(g.plant().currentExp, 2)
+  assert.equal(g.plant().status, g.ctx.PlanStatus.IS_GROWING, 'two experience is not the ten this plant needs')
+  assert.equal(g.errors().length, 0)
+  assert.equal(g.userInfo().length, 1)
+})
+
+test('watering is refused when the can holds less than the request', () => {
+  const g = game({ can: { wateringCan: 2 } })
+
+  g.sprayWater(5)
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.notEnoughWatering()])
+  assert.equal(g.can().wateringCan, 2, 'and nothing is spent on a refusal')
+  assert.equal(g.plant().currentExp, 0)
+})
+
+test('watering is refused when the plant is not growing', () => {
+  const g = game({ plant: { status: 0 } }) // CAN_SOW
+
+  g.sprayWater(2)
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.notIsGrowingStatus()])
+})
+
+test('watering is refused for a quantity that is not a quantity', () => {
+  const g = game()
+
+  g.sprayWater(0)
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.invalidParameterPayload()])
+  assert.equal(g.can().wateringCan, 20)
+})
+
+test('watering is refused when it would overshoot the plant', () => {
+  // five in, sixteen asked for, and the last required exp of this plant is twenty
+  const g = game({ plant: { currentExp: 5 }, seeds: [{ plantId: 1, requiredExp: [10, 20] }] })
+
+  g.sprayWater(16)
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.maxToSpray()])
+})
+
+test('the last water finishes the plant and starts its countdown', () => {
+  const g = game({ seeds: [{ plantId: 1, requiredExp: [10, 20] }], countdown: { fruitTimeCountdown: [60, 120] } })
+
+  g.sprayWater(10)
+
+  assert.equal(g.plant().currentExp, 10)
+  assert.equal(g.plant().status, g.ctx.PlanStatus.COMPLETED)
+  assert.equal(g.plant().nextTimeToPick, 1_700_000_000 + 60, 'the countdown of this plant, not the first one in the list')
+  // recorded rather than explained: the level and the fruit count are literals
+  assert.equal(g.plant().currentLevel, 5)
+  assert.equal(g.plant().currentFruit, 3)
+})
+
+// --- the countdown, which is the rule the API had the other way round ---------------------------
+
+test('the plant cannot be picked before its countdown is up', () => {
+  const g = game({ plant: { status: 2, nextTimeToPick: 1_700_000_000 + 60 } }) // COMPLETED, a minute to go
+
+  g.pickFruit()
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.timeToPickingNotOpen()])
+})
+
+// The pair that matters: the same plant one second later is not refused for waiting. It may still
+// fail for something else - the fruit item is not in this fixture - but the countdown is behind it.
+test('the plant is not refused for waiting once the countdown is up', () => {
+  const g = game({ plant: { status: 2, nextTimeToPick: 1_700_000_000 - 1 } }) // COMPLETED, a second ago
+
+  g.pickFruit()
+
+  const codes = g.errors()
+  assert.equal(codes.some((e) => JSON.stringify(e) === JSON.stringify(g.ctx.ErrorMessage.timeToPickingNotOpen())), false,
+    'the countdown has passed and it is still being told to wait')
+  assert.equal(codes.some((e) => JSON.stringify(e) === JSON.stringify(g.ctx.ErrorMessage.canNotPickingFruits())), false,
+    'the plant is completed')
+})

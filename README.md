@@ -215,8 +215,32 @@ make chart     # helm lint --strict + helm template
 `npm test` is `node --test test/*.test.mjs` - the runner in the runtime, no framework, no config:
 
 ```
-tests 15 · pass 15 · fail 0 · duration ~70ms
+tests 29 · pass 29 · fail 0 · duration ~110ms
 ```
+
+The first fifteen cover the plugin's helpers - the clocks, the mappers, the room picker. The rest call the
+handlers the way the match loop calls them: `nk`, logger, state, dispatcher and message, with storage, the
+clock and the dispatcher in the test's hands. The single-answer fake `nk` the helpers need is not enough
+for a handler, which reads the plant, the can, the inventory and the system configs in one go, so those
+tests answer storage by collection and key and remember what was written back.
+
+What the handler tests pin, and why they are worth reading next to the API in `legacy/quarkus-game-api`:
+
+- `EXPIRE_TIME_GET_NEXT_A_DROP_OF_WATER` is `5 * 60` and `MAX_WATERING_CAN` is 20. The API had neither,
+  and then had the wrong ceiling for one commit; that plugin is where the numbers came from.
+- A full can is not paid out later. An hour spent at twenty moves the anchor on rather than banking the
+  twelve drops, which is the rule the API's `refill` was written to match.
+- `pickingFruitHandle` refuses with `if (getCurrentTime() < nextTimeToPick)`, the comparison the API had
+  the wrong way round and now has right. The pair of tests here - one on each side of the countdown - is
+  the same pair, written against the implementation that was always correct.
+
+Two things the handler tests recorded rather than changed. The refill reads its guard from
+`state.nextTimeGetADropOfWater` and its arithmetic from the stored row, so a state that is due while
+storage is not subtracts drops the player never spent; the paths that write the state keep the two within
+one interval of each other, which is why it cannot happen today. And `findAllSeedConfig` returns null when
+the config row is missing, which a handler turns into `null[plantId - 1]` - a crash rather than a refusal,
+the same shape as the malformed-config crashes the API README records. The level a finished plant jumps to
+and the fruit it carries are literals, 5 and 3.
 
 They cover the plugin's own logic, which is the part this repository owns. What the Nakama runtime does with the
 plugin is what the smoke run against a live server is for.

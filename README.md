@@ -209,3 +209,14 @@ admin surface that gets found.
 ```bash
 make chart     # helm lint --strict + helm template
 ```
+
+## Test numbers
+
+`npm test` is `node --test test/*.test.mjs` - the runner in the runtime, no framework, no config:
+
+```
+tests 15 · pass 15 · fail 0 · duration ~70ms
+```
+
+They cover the plugin's own logic, which is the part this repository owns. What the Nakama runtime does with the
+plugin is what the smoke run against a live server is for.

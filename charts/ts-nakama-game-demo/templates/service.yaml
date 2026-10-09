@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ts-nakama-game-demo.fullname" . }}
+  labels:
+    {{- include "ts-nakama-game-demo.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.clientPort }}
+      targetPort: client
+      protocol: TCP
+      name: client
+    - port: {{ .Values.service.internalPort }}
+      targetPort: internal
+      protocol: TCP
+      name: internal
+    {{- if .Values.console.enabled }}
+    - port: {{ .Values.console.port }}
+      targetPort: console
+      protocol: TCP
+      name: console
+    {{- end }}
+  selector:
+    {{- include "ts-nakama-game-demo.selectorLabels" . | nindent 4 }}

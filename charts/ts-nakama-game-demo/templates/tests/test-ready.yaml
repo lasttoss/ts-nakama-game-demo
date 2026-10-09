@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "ts-nakama-game-demo.fullname" . }}-test-ready
+  labels:
+    {{- include "ts-nakama-game-demo.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+    - name: check
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        # The same thing a client does: open a TCP connection to the client port.
+        - 'nc -z -w 5 {{ include "ts-nakama-game-demo.fullname" . }} {{ .Values.service.clientPort }} && echo "the client port accepts a connection"'
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL

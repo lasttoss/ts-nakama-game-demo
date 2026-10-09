@@ -1,0 +1,36 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ts-nakama-game-demo.fullname" . }}
+  labels:
+    {{- include "ts-nakama-game-demo.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ts-nakama-game-demo.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # The client port, the internal gRPC port its peers use, and the console only when it is switched on.
+    - ports:
+        - port: {{ .Values.service.clientPort }}
+          protocol: TCP
+        - port: {{ .Values.service.internalPort }}
+          protocol: TCP
+        {{- if .Values.console.enabled }}
+        - port: {{ .Values.console.port }}
+          protocol: TCP
+        {{- end }}
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # PostgreSQL, and nothing else: Nakama keeps accounts and storage there.
+    - ports:
+        - port: {{ .Values.networkPolicy.postgresPort }}
+          protocol: TCP
+{{- end }}

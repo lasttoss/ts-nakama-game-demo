@@ -1,0 +1,10 @@
+{{ .Chart.Name }} {{ .Chart.Version }} is installed as {{ .Release.Name }}.
+
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  helm test {{ .Release.Name }}
+
+Clients dial {{ .Values.service.clientPort }}; the console is {{ if .Values.console.enabled }}enabled{{ else }}not exposed, which is the default{{ end }}.
+Nakama reads its configuration from the image (/nakama/data/local.yml) and reaches PostgreSQL in this namespace.
+Database credentials belong in a Secret - set secret.existingSecret to its name rather than putting them in
+values. The chart mounts no service-account token, and the readiness probe is a TCP connect because the health
+of this image is a command, not an HTTP path.

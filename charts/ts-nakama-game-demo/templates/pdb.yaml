@@ -1,0 +1,13 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ts-nakama-game-demo.fullname" . }}
+  labels:
+    {{- include "ts-nakama-game-demo.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "ts-nakama-game-demo.selectorLabels" . | nindent 6 }}
+{{- end }}

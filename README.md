@@ -189,3 +189,23 @@ need to know what a new player looks like, and one of them would eventually forg
 
 `docs/diagrams/plugin-and-play.mmd` is the Mermaid source; `make diagram` exports a PNG if a browser is
 present.
+
+## The chart
+
+`charts/ts-nakama-game-demo/` deploys the image this repository builds - Nakama with the plugin and
+`local.yml` inside `/nakama/data`. It carries what a realtime socket needs: `maxUnavailable: 0` so a replica
+never leaves the Service before its successor can accept a socket, a 60-second grace period so the node closes
+its sockets rather than dropping them mid-match, a PodDisruptionBudget, an HPA, and no service-account token.
+
+Two choices are deliberately narrower than the other charts in this portfolio. The probes are a TCP connect on
+the client port, because this image's health is the command `/nakama/nakama healthcheck` and **not an HTTP
+path**, so there is nothing honest to probe over HTTP. And `readOnlyRootFilesystem` is off by default, because
+the plugin and its configuration live under `/nakama/data` and a read-only root would be a claim about writes
+this chart cannot verify - it is a value, so it can be switched on when the image is known not to write.
+
+The console is not exposed unless `console.enabled` is set: an admin surface that is reachable by default is an
+admin surface that gets found.
+
+```bash
+make chart     # helm lint --strict + helm template
+```

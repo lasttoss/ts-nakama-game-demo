@@ -1,0 +1,38 @@
+replicaCount: 2
+image:
+  # The image this repository builds: heroiclabs/nakama with the compiled plugin and local.yml inside
+  # /nakama/data. The chart does not build it; it deploys it.
+  repository: ghcr.io/lasttoss/ts-nakama-game-demo
+  tag: latest
+  pullPolicy: IfNotPresent
+service:
+  type: ClusterIP
+  clientPort: 7350     # HTTP API + realtime socket, what a game client dials
+  internalPort: 7349   # server-to-server gRPC between Nakama nodes
+console:
+  # The console is an admin surface. It stays inside the cluster unless someone says otherwise.
+  enabled: false
+  port: 7351
+resources:
+  requests: {cpu: 200m, memory: 256Mi}
+  limits: {cpu: 1000m, memory: 512Mi}
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+networkPolicy:
+  enabled: true
+  postgresPort: 5432
+# The runtime configuration travels inside the image (local.yml). This is only for overrides.
+env: []
+secret:
+  # Credentials come from a Secret that already exists; the chart never holds one.
+  existingSecret: ""
+securityContext:
+  # Left off deliberately: the plugin and its config live under /nakama/data, and a read-only root would be
+  # a claim about writes this chart cannot verify. Turn it on if the image is known not to write.
+  readOnlyRootFilesystem: false

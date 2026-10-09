@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ts-nakama-game-demo
+description: Nakama with the plugin baked in - a realtime socket needs a deploy that closes it rather than cuts it, and a console that is not exposed by default
+type: application
+version: 0.1.0
+appVersion: "3.32.0"

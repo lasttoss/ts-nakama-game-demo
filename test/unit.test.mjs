@@ -958,3 +958,30 @@ test('the inventory rpc joins the config onto rows that name it', () => {
   assert.deepEqual(byId.variant.item, {}, 'and the row that names a variant gets an empty one')
   assert.equal(byId.named.quantity, 2)
 })
+
+// --- the shop rpc --------------------------------------------------------------------------------
+
+test('the shop rpc lists what is on sale and leaves the rest out', () => {
+  const ctx = load()
+  const storage = {
+    [ctx.tableConfigs.SYSTEM_COLLECTION]: {
+      [ctx.tableConfigs.SYSTEM_SHOP_COIN_CONFIG_KEY]: [
+        { id: 'on-sale', itemId: 'seed', status: 0 },
+        { id: 'hidden', itemId: 'seed', status: 1 },
+      ],
+      [ctx.tableConfigs.SYSTEM_ITEM_CONFIG_KEY]: [{ id: 'seed', resourceType: 2, resourceId: 1 }],
+    },
+  }
+
+  const list = JSON.parse(ctx.listItemsShop({}, quietLogger, gameNk(ctx, storage), ''))
+
+  assert.equal(list.length, 1)
+  assert.equal(list[0].id, 'on-sale')
+})
+
+test('the shop rpc answers with nothing when there is nothing configured', () => {
+  const ctx = load()
+
+  assert.deepEqual(JSON.parse(ctx.listItemsShop({}, quietLogger, gameNk(ctx, {}), '')), [],
+    'a shop with no config is an empty shop, not an error')
+})

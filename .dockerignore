@@ -1,0 +1,16 @@
+# Nothing here belongs in an image: the history, the workflows, the chart, the documentation and
+# whatever a local run left behind. Keeping the context small keeps the build cache useful.
+.git
+.gitignore
+.github
+*.md
+docs/
+charts/
+deploy/
+docker-compose*.yml
+.env
+data/
+tmp/
+coverage.out
+*_test.go
+pom.xml.bak

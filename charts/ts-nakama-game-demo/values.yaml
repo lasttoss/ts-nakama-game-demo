@@ -30,6 +30,8 @@ networkPolicy:
 # The runtime configuration travels inside the image (local.yml). This is only for overrides.
 env: []
 secret:
+  # Set true only to render or lint outside a cluster; a real install must name a Secret.
+  allowMissing: false
   # Credentials come from a Secret that already exists; the chart never holds one.
   existingSecret: ""
 securityContext:

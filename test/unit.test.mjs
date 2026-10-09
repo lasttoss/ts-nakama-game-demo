@@ -234,7 +234,10 @@ function gameNk(ctx, storage, { writes = [], account = { wallet: { coins: 0 } } 
       requests.flatMap((req) => {
         const collection = storage[req.collection]
         if (collection === undefined || collection[req.key] === undefined) return []
-        return [{ value: { data: collection[req.key] } }]
+        // A copy, because that is what a storage read is: the runtime hands over something the handler
+        // can mutate without changing what is stored. Returning the stored object itself made a
+        // mutation indistinguishable from a write, which is exactly the difference these tests are for.
+        return [{ value: { data: JSON.parse(JSON.stringify(collection[req.key])) } }]
       }),
     storageWrite: (requests) => {
       for (const req of requests) {
@@ -250,9 +253,18 @@ function gameNk(ctx, storage, { writes = [], account = { wallet: { coins: 0 } } 
 
 const quietLogger = { error: () => {}, info: () => {}, warn: () => {}, debug: () => {} }
 
+// The fake dispatcher answers what the handlers actually call. matchJoin also updates the match label
+// when the room fills up, so this records that too - the first run of these tests died on
+// "dispatcher.matchLabelUpdate is not a function", which is the fake being thinner than the runtime.
 function recordingDispatcher() {
   const sent = []
-  return { sent, broadcastMessage: (opCode, data) => sent.push({ opCode, data: JSON.parse(data) }) }
+  const labels = []
+  return {
+    sent,
+    labels,
+    broadcastMessage: (opCode, data) => sent.push({ opCode, data: JSON.parse(data) }),
+    matchLabelUpdate: (label) => labels.push(label),
+  }
 }
 
 // game assembles a player with a plant in the ground and a can, plus the system config a handler
@@ -261,7 +273,10 @@ function game({ now = 1_700_000_000, plant = {}, can = {}, inventory = {}, seeds
   const ctx = load({ now })
   const storage = {}
   const writes = []
-  const state = { userId: 'ada', nextTimeGetADropOfWater: now }
+  // the shape matchInit builds, because the match functions read all of it: presences and emptyTicks
+  // are what the loop and the join touch before they touch anything else
+  const state = { label: 'userId:ada', userId: 'ada', emptyTicks: 0, presences: {}, joinsInProgress: 0,
+                  nextTimeGetADropOfWater: now, matchStatus: ctx.OpCode.INIT_RESOURCES }
   const dispatcher = recordingDispatcher()
   const nk = gameNk(ctx, storage, { writes })
 
@@ -292,6 +307,9 @@ function game({ now = 1_700_000_000, plant = {}, can = {}, inventory = {}, seeds
     checkWateringCan: () => ctx.checkWateringCanHandle(nk, quietLogger, state, dispatcher),
     sowSeed: (itemId) => ctx.sowSeedHandle(nk, quietLogger, state, dispatcher, { data: JSON.stringify({ itemId }) }),
     protect: (type) => ctx.pickingProtectHandle(nk, quietLogger, state, dispatcher, { data: JSON.stringify({ type }) }),
+    join: (presences = [{ userId: state.userId }]) => ctx.matchJoin({ userId: state.userId, matchId: 'm1' }, quietLogger, nk, dispatcher, 1, state, presences),
+    loopTick: (messages = []) => ctx.matchLoop({ userId: state.userId, matchId: 'm1' }, quietLogger, nk, dispatcher, 1, state, messages),
+    message: (opCode, body = {}) => ({ opCode, sender: { userId: state.userId }, data: JSON.stringify(body) }),
   }
 }
 
@@ -625,4 +643,143 @@ test('protecting works on a plant that is not even grown', () => {
 
   assert.equal(g.errors().length, 0)
   assert.equal(g.plant().protectFruit, true, 'an empty plot now carries a fruit protection')
+})
+
+// --- the match lifecycle ------------------------------------------------------------------------
+
+test('a match starts with the player the params name', () => {
+  const ctx = load()
+  const { state, tickRate: rate, label } = ctx.matchInit({}, quietLogger, {}, { userId: 'ada' })
+
+  assert.equal(state.userId, 'ada')
+  assert.equal(state.label, 'userId:ada')
+  assert.equal(state.matchStatus, ctx.OpCode.INIT_RESOURCES)
+  assert.equal(state.nextTimeGetADropOfWater, 0, 'the match state starts without an anchor')
+  assert.equal(state.emptyTicks, 0)
+  assert.equal(label, 'userId:ada')
+  assert.equal(rate, ctx.tickRate)
+})
+
+test('joining sends the player their state and asks the match to start', () => {
+  const g = game({ plant: { currentExp: 15 }, seeds: oneSeedPlant })
+  g.state.matchStatus = g.ctx.OpCode.INIT_RESOURCES
+
+  g.join()
+
+  assert.equal(g.userInfo().length, 1)
+  assert.equal(g.state.matchStatus, g.ctx.OpCode.START)
+  assert.equal(g.plant().currentLevel, 2, 'fifteen experience is past the first ten and not the second twenty')
+  assert.deepEqual(g.dispatcher.labels, ['userId:ada'],
+    'one presence is a full private room, so the label is refreshed')
+})
+
+// The duplicate the API README warned about has already drifted. checkWateringCanHandle works out the
+// drops from the stored row and saves them; this copy works them out from the match state - and saves
+// neither, because the line at the end of the block writes the plant progress it did not touch. So the
+// two paths that refill a can, one on a tick and one on a join, give different answers, and this pair
+// of tests is that difference: same fixture, 5 and 8 against 5 and 5.
+test('joining works out the water and then loses it', () => {
+  const g = game({ can: { wateringCan: 5, nextTimeGetADropOfWater: 1_700_000_000 - 600 } })
+  g.state.nextTimeGetADropOfWater = 1_700_000_000 - 600 // due, and the stored anchor agrees
+  g.state.matchStatus = g.ctx.OpCode.START
+
+  g.join()
+
+  assert.equal(g.can().wateringCan, 5, 'the water it worked out was written to the plant progress row instead')
+})
+
+test('a tick works out the same water and keeps it', () => {
+  const g = game({ can: { wateringCan: 5, nextTimeGetADropOfWater: 1_700_000_000 - 600 } })
+  g.state.nextTimeGetADropOfWater = 1_700_000_000 - 600
+  g.state.matchStatus = g.ctx.OpCode.START
+
+  g.loopTick()
+
+  assert.equal(g.can().wateringCan, 8, 'the same ten minutes, counted by the other copy')
+})
+
+test('a match with nobody in it for long enough closes itself', () => {
+  const g = game()
+  g.state.matchStatus = g.ctx.OpCode.START
+  g.state.presences = {}
+  g.state.joinsInProgress = 0
+  g.state.emptyTicks = g.ctx.maxEmptySec * g.ctx.tickRate
+
+  assert.equal(g.loopTick(), null)
+})
+
+test('a leaving player is struck off the presence list', () => {
+  const g = game()
+  const left = g.ctx.matchLeave({ matchId: 'm1' }, quietLogger, g.nk, g.dispatcher, 1, g.state, [{ userId: 'ada' }])
+
+  assert.equal(left, null)
+  assert.equal(g.state.presences['ada'], null)
+})
+
+test('a tick hands a watering message to the watering handler', () => {
+  const g = game({ seeds: oneSeedPlant, countdown: { fruitTimeCountdown: [60] } })
+  g.state.matchStatus = g.ctx.OpCode.START
+
+  g.loopTick([g.message(g.ctx.OpCode.SPRAY_WATER, { quantity: 3 })])
+
+  assert.equal(g.can().wateringCan, 17)
+  assert.equal(g.plant().currentExp, 3)
+})
+
+test('a tick ignores an opcode it does not know', () => {
+  // both anchors in the future, or the can tick would refill and send a message that has nothing to do
+  // with the opcode being ignored
+  const g = game({ can: { wateringCan: 20, nextTimeGetADropOfWater: 1_700_000_000 + 60 }, seeds: oneSeedPlant })
+  g.state.matchStatus = g.ctx.OpCode.START
+  g.state.nextTimeGetADropOfWater = 1_700_000_000 + 60
+
+  g.loopTick([g.message(9999, { quantity: 3 })])
+
+  assert.equal(g.can().wateringCan, 20)
+  assert.equal(g.dispatcher.sent.length, 0)
+})
+
+// --- energy ------------------------------------------------------------------------------------
+
+function energyGame({ now = 1_700_000_000, energy } = {}) {
+  const ctx = load({ now })
+  const storage = {
+    [ctx.tableConfigs.USER_ENERGY_COLLECTION]: { [ctx.tableConfigs.USER_ENERGY_KEY]: energy },
+  }
+  const nk = gameNk(ctx, storage)
+  return { ctx, nk, energy: () => storage[ctx.tableConfigs.USER_ENERGY_COLLECTION][ctx.tableConfigs.USER_ENERGY_KEY] }
+}
+
+// Energy comes back on a clock of its own: three minutes a point, where the can is five, and its own
+// ceiling of fifty. Ten minutes is floor(600/180) + 1, which is four.
+test('energy comes back with the clock', () => {
+  const g = energyGame({ energy: { currentEnergy: 3, maxEnergy: 10, nextTimeToReset: 1_700_000_000 - 600 } })
+
+  const response = JSON.parse(g.ctx.getUserEnergy({ userId: 'ada' }, quietLogger, g.nk, ''))
+
+  assert.equal(response.currentEnergy, 7)
+  assert.equal(g.energy().currentEnergy, 7)
+  assert.equal(g.energy().nextTimeToReset, 1_700_000_000 + g.ctx.EXPIRE_TIME_TO_GET_NEXT_USER_ENERGY)
+  assert.equal(g.ctx.EXPIRE_TIME_TO_GET_NEXT_USER_ENERGY, 3 * 60, 'three minutes, against the can\'s five')
+})
+
+// Recorded: filling to the ceiling uses a second constant, EXPIRE_TIME_TO_MAX_NEXT_USER_ENERGY, which
+// today holds the same number as the usual interval. The name is written as if a full bar should wait
+// longer before its next point, so either the number is a placeholder or the name is a leftover; I wrote
+// this test expecting the two to differ and it is the assertion that says they do not.
+test('energy that fills to the ceiling moves its clock by the other constant', () => {
+  const g = energyGame({ energy: { currentEnergy: 49, maxEnergy: 50, nextTimeToReset: 1_700_000_000 - 600 } })
+
+  const response = JSON.parse(g.ctx.getUserEnergy({ userId: 'ada' }, quietLogger, g.nk, ''))
+
+  assert.equal(response.currentEnergy, 50, 'four points owed, one fitted')
+  assert.equal(g.energy().nextTimeToReset, 1_700_000_000 + g.ctx.EXPIRE_TIME_TO_MAX_NEXT_USER_ENERGY)
+  assert.equal(g.ctx.EXPIRE_TIME_TO_MAX_NEXT_USER_ENERGY, g.ctx.EXPIRE_TIME_TO_GET_NEXT_USER_ENERGY,
+    'the two constants hold the same number today')
+})
+
+test('energy refuses to answer without a player', () => {
+  const g = energyGame({ energy: { currentEnergy: 1, maxEnergy: 10, nextTimeToReset: 0 } })
+
+  assert.throws(() => g.ctx.getUserEnergy({}, quietLogger, g.nk, ''))
 })

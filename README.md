@@ -215,7 +215,7 @@ make chart     # helm lint --strict + helm template
 `npm test` is `node --test test/*.test.mjs` - the runner in the runtime, no framework, no config:
 
 ```
-tests 29 · pass 29 · fail 0 · duration ~110ms
+tests 29 · pass 29 · fail 0
 ```
 
 The first fifteen cover the plugin's helpers - the clocks, the mappers, the room picker. The rest call the

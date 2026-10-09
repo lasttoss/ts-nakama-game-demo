@@ -215,10 +215,10 @@ make chart     # helm lint --strict + helm template
 `npm test` is `node --test test/*.test.mjs` - the runner in the runtime, no framework, no config:
 
 ```
-tests 54 · pass 54 · fail 0
+tests 67 · pass 67 · fail 0
 ```
 
-The first fifteen cover the plugin's helpers - the clocks, the mappers, the room picker. The rest call the
+The first tests cover the plugin's helpers - the clocks, the mappers, the room picker. The rest call the
 handlers the way the match loop calls them: `nk`, logger, state, dispatcher and message, with storage, the
 clock and the dispatcher in the test's hands. The single-answer fake `nk` the helpers need is not enough
 for a handler, which reads the plant, the can, the inventory and the system configs in one go, so those

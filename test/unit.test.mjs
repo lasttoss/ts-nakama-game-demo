@@ -783,3 +783,178 @@ test('energy refuses to answer without a player', () => {
 
   assert.throws(() => g.ctx.getUserEnergy({}, quietLogger, g.nk, ''))
 })
+
+// --- what the server registers ------------------------------------------------------------------
+
+// A handler that exists and is not registered is a feature nobody can call, which is a shape this
+// project has already turned up twice - a can nothing fills and a flag nothing reads. This is the test
+// that would catch the third one.
+test('the module registers every rpc and every match function it has', () => {
+  const ctx = load()
+  const rpcs = {}
+  const matches = {}
+  let authHook = null
+  const initializer = {
+    registerRpc: (id, fn) => { rpcs[id] = fn },
+    registerMatch: (name, handlers) => { matches[name] = handlers },
+    registerAfterAuthenticateDevice: (fn) => { authHook = fn },
+  }
+
+  ctx.InitModule({}, quietLogger, {}, initializer)
+
+  assert.deepEqual(Object.keys(rpcs).sort(), [
+    ctx.rpcIdFindPrivateRoom,
+    ctx.rpcIdListItemsShop,
+    ctx.rpcIdListUserInventory,
+    ctx.rpcIdUserEnergy,
+  ].sort())
+  for (const fn of Object.values(rpcs)) assert.equal(typeof fn, 'function')
+
+  assert.equal(typeof matches[ctx.moduleName].matchInit, 'function')
+  for (const name of ['matchInit', 'matchJoinAttempt', 'matchJoin', 'matchLeave', 'matchLoop', 'matchTerminate', 'matchSignal']) {
+    assert.equal(typeof matches[ctx.moduleName][name], 'function', name + ' is not registered')
+  }
+  assert.equal(typeof authHook, 'function')
+})
+
+// --- joining a match ------------------------------------------------------------------------------
+
+function attempt(g, presence = { userId: 'ada' }) {
+  return g.ctx.matchJoinAttempt({ userId: 'ada', sessionId: 's1' }, quietLogger, g.nk, g.dispatcher, 1, g.state, presence, {})
+}
+
+test('a player who is not in the match yet is let in', () => {
+  const g = game()
+
+  const answer = attempt(g)
+
+  assert.equal(answer.accept, true)
+  assert.equal(answer.state.joinsInProgress, 1)
+})
+
+test('a player coming back after a disconnect is held while they are counted', () => {
+  const g = game()
+  g.state.presences = { ada: null } // struck off by matchLeave
+
+  const answer = attempt(g)
+
+  assert.equal(answer.accept, false)
+  assert.equal(answer.state.joinsInProgress, 1)
+  assert.equal(answer.rejectMessage, undefined, 'nothing to reject: they are being let back in')
+})
+
+test('a player already in the match cannot join it again', () => {
+  const g = game()
+  g.state.presences = { ada: { userId: 'ada' } }
+
+  const answer = attempt(g)
+
+  assert.equal(answer.accept, false)
+  assert.equal(answer.rejectMessage, 'already joined')
+})
+
+test('a full match says so', () => {
+  const g = game()
+  g.state.presences = { someone: {} }
+  g.state.joinsInProgress = g.ctx.limitRoom
+
+  const answer = attempt(g)
+
+  assert.equal(answer.accept, false)
+  assert.equal(answer.rejectMessage, 'match full')
+})
+
+test('a join without a session or a player is refused loudly', () => {
+  const g = game()
+
+  assert.throws(() => g.ctx.matchJoinAttempt({ sessionId: 's1' }, quietLogger, g.nk, g.dispatcher, 1, g.state, { userId: 'ada' }, {}))
+  assert.throws(() => g.ctx.matchJoinAttempt({ userId: 'ada' }, quietLogger, g.nk, g.dispatcher, 1, g.state, { userId: 'ada' }, {}))
+})
+
+test('the signal and terminate hooks hand the state back untouched', () => {
+  const g = game()
+
+  assert.equal(g.ctx.matchSignal({}, quietLogger, g.nk, g.dispatcher, 1, g.state).state, g.state)
+  assert.equal(g.ctx.matchTerminate({}, quietLogger, g.nk, g.dispatcher, 1, g.state, 5).state, g.state)
+})
+
+test('asking the server for the time answers with the clock', () => {
+  const g = game()
+
+  g.ctx.getCurrentTimeServerHandle(g.nk, quietLogger, g.state, g.dispatcher, { data: '{}' })
+
+  assert.deepEqual(g.dispatcher.sent, [{ opCode: g.ctx.OpCode.GET_CURRENT_TIME_SERVER, data: { currentTime: 1_700_000_000 } }])
+})
+
+// --- the authenticate hook ------------------------------------------------------------------------
+
+function authNk(ctx, account, calls = []) {
+  return {
+    accountGetId: () => account,
+    walletUpdate: (...args) => calls.push(['walletUpdate', ...args]),
+    accountUpdateId: (...args) => calls.push(['accountUpdateId', ...args]),
+  }
+}
+
+test('a new player is given a wallet and the fields the client expects', () => {
+  const ctx = load()
+  const calls = []
+  const nk = authNk(ctx, { user: { userId: 'ada', metadata: {} } }, calls)
+
+  const out = ctx.initializeAuthenticateDevice({ userId: 'ada' }, quietLogger, nk, { token: 't' }, {})
+
+  assert.deepEqual(out, { token: 't' }, 'the session comes back as it went in')
+  sameJson(calls[0], ['walletUpdate', 'ada', { coin: 0 }, {}, true])
+  const update = calls[1]
+  assert.equal(update[0], 'accountUpdateId')
+  assert.equal(update[3], 'DEFAULT DEFAULT', 'recorded: every new player is called this')
+  assert.equal(update[8].hasInit, true)
+})
+
+test('a player who was already initialized is left alone', () => {
+  const ctx = load()
+  const calls = []
+  const nk = authNk(ctx, { user: { userId: 'ada', metadata: { hasInit: true } } }, calls)
+
+  ctx.initializeAuthenticateDevice({ userId: 'ada' }, quietLogger, nk, { token: 't' }, {})
+
+  assert.deepEqual(calls, [], 'no wallet and no account write on every login')
+})
+
+test('the authenticate hook refuses to run without a player', () => {
+  const ctx = load()
+  const nk = authNk(ctx, { user: { userId: 'ada', metadata: {} } })
+
+  assert.throws(() => ctx.initializeAuthenticateDevice({}, quietLogger, nk, {}, {}))
+})
+
+// --- the two list rpcs ---------------------------------------------------------------------------
+
+test('the inventory rpc refuses to answer without a player', () => {
+  const ctx = load()
+
+  assert.throws(() => ctx.listUserInventories({}, quietLogger, gameNk(ctx, {}), ''))
+})
+
+// The item is joined onto the row by the id in the row itself, and the config is keyed by item while the
+// bag is keyed by variant - the same pair of words sowing taught these tests. A row holding the config's
+// id gets the item; a row holding a variant gets nothing back.
+test('the inventory rpc joins the config onto rows that name it', () => {
+  const ctx = load()
+  const storage = {
+    [ctx.tableConfigs.SYSTEM_COLLECTION]: { [ctx.tableConfigs.SYSTEM_ITEM_CONFIG_KEY]: [{ id: 'seed', resourceType: 2, resourceId: 1 }] },
+    [ctx.tableConfigs.USER_INVENTORY_COLLECTION]: {
+      [ctx.tableConfigs.USER_INVENTORY_KEY]: {
+        named: { itemId: 'seed', quantity: 2 },
+        variant: { itemId: 'seed-1', quantity: 1 },
+      },
+    },
+  }
+
+  const list = JSON.parse(ctx.listUserInventories({ userId: 'ada' }, quietLogger, gameNk(ctx, storage), ''))
+
+  const byId = Object.fromEntries(list.map((row) => [row.itemId, row]))
+  assert.equal(byId.named.item.id, 'seed', 'the row that names the config gets the item')
+  assert.deepEqual(byId.variant.item, {}, 'and the row that names a variant gets an empty one')
+  assert.equal(byId.named.quantity, 2)
+})

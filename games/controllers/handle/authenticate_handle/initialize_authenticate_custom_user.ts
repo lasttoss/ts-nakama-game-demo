@@ -31,7 +31,7 @@ function initWallet(nk: nkruntime.Nakama, ctx: nkruntime.Context, logger: nkrunt
         }
 
         const displayName = "DEFAULT DEFAULT"
-        const avatarUrl = "https://assets.dy.io/avatars/default.png"
+        const avatarUrl = ""   // no default avatar: let the client pick one
 
         try {
             nk.accountUpdateId(account.user.userId, null, displayName, null, null, null, avatarUrl, userMetadata)

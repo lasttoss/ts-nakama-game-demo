@@ -224,4 +224,7 @@ js/
 /package-lock.json
 
 .env
-docker-compose.yml
+.cookie
+build/
+.cookie
+build/

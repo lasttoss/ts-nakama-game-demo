@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npx tsc --noEmit
+      - name: The plugin must load in the real Nakama runtime
+        run: |
+          docker compose up -d --build
+          node scripts/smoke.mjs 127.0.0.1 7350
+      - name: Nakama logs
+        if: always()
+        run: docker compose logs nakama | tail -50

@@ -3,13 +3,24 @@ let joinPrivateRoom: nkruntime.RpcFunction = function (ctx: nkruntime.Context, l
         throw ErrorMessage.notFoundAccountInfo()
     }
 
-    const query = "+userId:" + ctx.userId;
-    const matches = nk.matchList(1, true, "", 0, 1, query);
-    let matchId = ""
-    if (matches.length > 0) {
-        matchId = matches[0].matchId
-    } else {
-        matchId = nk.matchCreate(moduleName, {userId: ctx.userId})
+    // matchList(limit, authoritative, label, minSize, maxSize, query) is served from an
+    // indexed match registry: the label/query arguments are filters over that index, and a
+    // match can be missing from it for a moment after it is created. Reusing the wrong
+    // match would drop the player into somebody else's room, so this lists the registry and
+    // only accepts a candidate whose label is an exact match for this player. When nothing
+    // matches (first call, or an index that has not caught up yet) a room is created.
+    const label = "userId:" + ctx.userId;
+    const matches = nk.matchList(100, true, "", 0, 100, "");
+
+    let matchId = "";
+    for (let i = 0; i < matches.length; i++) {
+        if (matches[i].label === label) {
+            matchId = matches[i].matchId;
+            break;
+        }
+    }
+    if (matchId === "") {
+        matchId = nk.matchCreate(moduleName, {userId: ctx.userId});
     }
     return JSON.stringify({matchId});
 }

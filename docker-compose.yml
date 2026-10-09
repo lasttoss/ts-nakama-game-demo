@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: nakama-postgres
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-nakama}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  nakama:
+    build: .
+    container_name: nakama-demo
+    entrypoint:
+      - "/bin/sh"
+      - "-ecx"
+      - >
+        /nakama/nakama migrate up --database.address postgres://${DB_URI:-postgres:localdb@postgres:5432}/${DB_DATABASE:-nakama} &&
+        exec /nakama/nakama --config /nakama/data/${DATA_ENV:-local.yml}
+        --database.address postgres://${DB_URI:-postgres:localdb@postgres:5432}/${DB_DATABASE:-nakama}
+    ports:
+      - "${NAKAMA_PORT:-7350}:7350"   # game client API (HTTP + realtime socket)
+      - "${CONSOLE_PORT:-7351}:7351"  # Nakama console
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/nakama/nakama", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

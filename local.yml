@@ -1,19 +1,23 @@
-console:
-  password: "12345678"
-  max_message_size_bytes: 409600
+# Local development configuration only.
+# The keys below are placeholders: the server key is Nakama's documented default and the
+# console password is a throwaway. Replace both before exposing this anywhere.
+name: nakama-node-1
 logger:
   level: "DEBUG"
 runtime:
   js_entrypoint: "build/index.js"
-  http_key: "5ec27fcb-3e59-4557-b0a6-ed7834379f81"
+  http_key: "00000000-0000-0000-0000-0000000000ff"
+console:
+  password: "password"
+  max_message_size_bytes: 409600
 session:
-  token_expiry_sec: 7200 # 1 hours
+  token_expiry_sec: 7200        # 2 hours
   refresh_token_expiry_sec: 5184000
   single_socket: true
   single_match: true
 socket:
-  server_key: "534B14E0-7235-44AC-84CB-7C265EAC147E"
-  max_message_size_bytes: 4096 # reserved buffer
+  server_key: "defaultkey"
+  max_message_size_bytes: 4096
   max_request_size_bytes: 131072
   idle_timeout_ms: 60000
 database:

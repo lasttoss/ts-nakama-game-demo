@@ -257,7 +257,7 @@ function recordingDispatcher() {
 
 // game assembles a player with a plant in the ground and a can, plus the system config a handler
 // needs, and returns everything a test wants to poke at afterwards.
-function game({ now = 1_700_000_000, plant = {}, can = {}, inventory = {}, seeds = null, countdown = null } = {}) {
+function game({ now = 1_700_000_000, plant = {}, can = {}, inventory = {}, seeds = null, countdown = null, items = null } = {}) {
   const ctx = load({ now })
   const storage = {}
   const writes = []
@@ -279,6 +279,7 @@ function game({ now = 1_700_000_000, plant = {}, can = {}, inventory = {}, seeds
   storage[ctx.tableConfigs.SYSTEM_COLLECTION] = {}
   if (seeds !== null) storage[ctx.tableConfigs.SYSTEM_COLLECTION][ctx.tableConfigs.SYSTEM_SEED_CONFIG_KEY] = seeds
   if (countdown !== null) storage[ctx.tableConfigs.SYSTEM_COLLECTION][ctx.tableConfigs.SYSTEM_PICKING_FRUIT_COUNTDOWN_CONFIG] = countdown
+  if (items !== null) storage[ctx.tableConfigs.SYSTEM_COLLECTION][ctx.tableConfigs.SYSTEM_ITEM_CONFIG_KEY] = items
 
   return {
     ctx, nk, state, dispatcher, storage, writes,
@@ -289,6 +290,8 @@ function game({ now = 1_700_000_000, plant = {}, can = {}, inventory = {}, seeds
     sprayWater: (quantity) => ctx.sprayWaterHandle(nk, quietLogger, state, dispatcher, { data: JSON.stringify({ quantity }) }),
     pickFruit: () => ctx.pickingFruitHandle(nk, quietLogger, state, dispatcher, { data: '{}' }),
     checkWateringCan: () => ctx.checkWateringCanHandle(nk, quietLogger, state, dispatcher),
+    sowSeed: (itemId) => ctx.sowSeedHandle(nk, quietLogger, state, dispatcher, { data: JSON.stringify({ itemId }) }),
+    protect: (type) => ctx.pickingProtectHandle(nk, quietLogger, state, dispatcher, { data: JSON.stringify({ type }) }),
   }
 }
 
@@ -451,4 +454,175 @@ test('the plant is not refused for waiting once the countdown is up', () => {
     'the countdown has passed and it is still being told to wait')
   assert.equal(codes.some((e) => JSON.stringify(e) === JSON.stringify(g.ctx.ErrorMessage.canNotPickingFruits())), false,
     'the plant is completed')
+})
+
+// --- sowing ------------------------------------------------------------------------------------
+
+// The config is keyed by item, the inventory by variant: "seed-1" in the bag is "seed" in the config,
+// and the handler trims the last dash-separated part to get from one to the other.
+const seedItems = [{ id: 'seed', resourceType: 2 /* SEED_TYPE */, resourceId: 1 }]
+const oneSeedPlant = [{ plantId: 1, requiredExp: [10, 20] }]
+
+test('sowing puts the seed in the ground and takes it out of the bag', () => {
+  const g = game({ plant: { status: 0 }, inventory: { 'seed-1': { itemId: 'seed-1', quantity: 3 } }, items: seedItems, seeds: oneSeedPlant })
+
+  g.sowSeed('seed-1')
+
+  assert.equal(g.plant().status, g.ctx.PlanStatus.IS_GROWING)
+  assert.equal(g.plant().plantId, 1)
+  assert.equal(g.plant().currentExp, 0)
+  assert.equal(g.plant().maxExp, 20, 'maxExp is the last required exp in the config, not the first')
+  assert.equal(g.plant().itemId, 'seed', 'the plant remembers the config item, not the variant in the bag')
+  const bag = g.storage[g.ctx.tableConfigs.USER_INVENTORY_COLLECTION][g.ctx.tableConfigs.USER_INVENTORY_KEY]
+  assert.equal(bag['seed-1'].quantity, 2)
+})
+
+test('the last seed leaves the bag empty rather than at zero', () => {
+  const g = game({ plant: { status: 0 }, inventory: { 'seed-1': { itemId: 'seed-1', quantity: 1 } }, items: seedItems, seeds: oneSeedPlant })
+
+  g.sowSeed('seed-1')
+
+  const bag = g.storage[g.ctx.tableConfigs.USER_INVENTORY_COLLECTION][g.ctx.tableConfigs.USER_INVENTORY_KEY]
+  assert.equal(bag['seed-1'], undefined, 'a row of zero is gone, not kept')
+})
+
+test('sowing is refused while a plant is already in the ground', () => {
+  const g = game({ inventory: { 'seed-1': { itemId: 'seed-1', quantity: 3 } }, items: seedItems })
+
+  g.sowSeed('seed-1')
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.plantIsGrowing()])
+  assert.equal(g.plant().plantId, 1, 'the plant that was already there is untouched')
+  assert.equal(g.storage[g.ctx.tableConfigs.USER_INVENTORY_COLLECTION][g.ctx.tableConfigs.USER_INVENTORY_KEY]['seed-1'].quantity, 3)
+})
+
+// The handler trims the variant off: "seed-3" in the bag is the "seed" of the config, so a variant the
+// config has never heard of still sows. What lands in the bag and what the config is keyed by are
+// different words for the same thing, and this is the pair of tests that says which one is which.
+test('a seed variant the config does not list is still the seed the config lists', () => {
+  const g = game({ plant: { status: 0 }, inventory: { 'seed-3': { itemId: 'seed-3', quantity: 1 } }, items: seedItems, seeds: oneSeedPlant })
+
+  g.sowSeed('seed-3')
+
+  assert.equal(g.errors().length, 0)
+  assert.equal(g.plant().status, g.ctx.PlanStatus.IS_GROWING)
+  assert.equal(g.plant().plantId, 1)
+})
+
+test('sowing is refused for an item the config does not know', () => {
+  const g = game({ plant: { status: 0 }, inventory: { 'rock-1': { itemId: 'rock-1', quantity: 1 } }, items: seedItems, seeds: oneSeedPlant })
+
+  g.sowSeed('rock-1')
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.invalidItemId()])
+})
+
+test('sowing is refused for an item that is not a seed', () => {
+  const g = game({
+    plant: { status: 0 },
+    inventory: { 'fruit-1': { itemId: 'fruit-1', quantity: 1 } },
+    items: [{ id: 'fruit', resourceType: 5 /* FRUIT_REWARD_TYPE */, resourceId: 1 }],
+    seeds: oneSeedPlant,
+  })
+
+  g.sowSeed('fruit-1')
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.invalidResource()])
+})
+
+test('sowing is refused when there is no seed left in the bag', () => {
+  const g = game({ plant: { status: 0 }, inventory: {}, items: seedItems, seeds: oneSeedPlant })
+
+  g.sowSeed('seed-1')
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.notEnoughToSow()])
+})
+
+// --- picking a fruit ---------------------------------------------------------------------------
+
+// Recorded: picking resets the plant and hands over nothing. There is no fruit item, no rate table and
+// no add to the inventory in pickingFruitHandle - it writes the inventory it read back unchanged - and
+// nothing else in this repository reads FRUIT_REWARD_TYPE or gives a fruit, so the pick is a reset.
+// The Java API in legacy/quarkus-game-api does hand one over, picked by rate, which is how the two
+// implementations came to differ. Whether this one is unfinished or the reward arrives from elsewhere
+// is not something the code says.
+test('picking clears the plant and hands over no fruit', () => {
+  const g = game({ plant: { status: 2, nextTimeToPick: 1_700_000_000 - 1, currentFruit: 3, maxExp: 20 } })
+
+  g.pickFruit()
+
+  assert.equal(g.plant().status, g.ctx.PlanStatus.CAN_SOW)
+  assert.equal(g.plant().plantId, 0)
+  assert.equal(g.plant().maxExp, 0)
+  assert.equal(g.plant().currentFruit, 0, 'the three fruit the plant was carrying are gone')
+  assert.deepEqual(g.userInfo()[0].inventories, {}, 'the player is told they have nothing they did not have before')
+})
+
+// --- protecting --------------------------------------------------------------------------------
+
+// The shield is found by resource id, so the fixture asks the constants rather than guessing the number:
+// the first attempt used 1 and every protect test came back with itemNotFound.
+const shieldResourceId = load().ConsumeResource.SHIELD
+const shields = [{ id: 'shield-1', resourceType: 3 /* CONSUME_TYPE */, resourceId: shieldResourceId }]
+
+test('protecting costs a shield and marks the plant', () => {
+  const g = game({ inventory: { 'shield-1': { itemId: 'shield-1', quantity: 2 } }, items: shields })
+
+  g.protect(g.ctx.ProtectType.COIN)
+
+  assert.equal(g.plant().protectCoin, true)
+  assert.equal(g.storage[g.ctx.tableConfigs.USER_INVENTORY_COLLECTION][g.ctx.tableConfigs.USER_INVENTORY_KEY]['shield-1'].quantity, 1)
+})
+
+test('protecting the same thing twice is refused', () => {
+  const g = game({ plant: { protectWater: true }, inventory: { 'shield-1': { itemId: 'shield-1', quantity: 2 } }, items: shields })
+
+  g.protect(g.ctx.ProtectType.WATER)
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.hasBeenUseShieldToProtect()])
+  assert.equal(g.storage[g.ctx.tableConfigs.USER_INVENTORY_COLLECTION][g.ctx.tableConfigs.USER_INVENTORY_KEY]['shield-1'].quantity, 2, 'and the shield is not spent on a refusal')
+})
+
+test('protecting is refused with no shield in the bag', () => {
+  const g = game({ inventory: {}, items: shields })
+
+  g.protect(g.ctx.ProtectType.COIN)
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.notEnoughShieldToProtect()])
+})
+
+test('protecting is refused for a type that is not one', () => {
+  const g = game({ inventory: { 'shield-1': { itemId: 'shield-1', quantity: 1 } }, items: shields })
+
+  g.protect(4)
+
+  sameJson(g.errors(), [g.ctx.ErrorMessage.invalidParameterPayload()])
+  assert.equal(g.storage[g.ctx.tableConfigs.USER_INVENTORY_COLLECTION][g.ctx.tableConfigs.USER_INVENTORY_KEY]['shield-1'].quantity, 1)
+})
+
+// Recorded, and the same shape as the unknown protect type the API README records - except that here
+// the shield is spent. Type 0 passes the range check, the switch has a default that does nothing, and
+// the line that takes the shield out of the bag runs after the switch whatever happened in it.
+test('protecting with type zero spends a shield and protects nothing', () => {
+  const g = game({ inventory: { 'shield-1': { itemId: 'shield-1', quantity: 2 } }, items: shields })
+
+  g.protect(0) // ProtectType.NONE
+
+  assert.equal(g.errors().length, 0, 'it is answered as success')
+  assert.equal(g.plant().protectCoin, false)
+  assert.equal(g.plant().protectWater, false)
+  assert.equal(g.plant().protectFruit, false)
+  assert.equal(g.storage[g.ctx.tableConfigs.USER_INVENTORY_COLLECTION][g.ctx.tableConfigs.USER_INVENTORY_KEY]['shield-1'].quantity, 1,
+    'and the shield is gone')
+})
+
+// Recorded: the API refuses to protect a plant that is not ripe, and this handler does not look at the
+// status at all - a shield can be spent on a plot with nothing in it.
+test('protecting works on a plant that is not even grown', () => {
+  const g = game({ plant: { status: 0, plantId: 0 }, inventory: { 'shield-1': { itemId: 'shield-1', quantity: 1 } }, items: shields })
+
+  g.protect(g.ctx.ProtectType.FRUIT)
+
+  assert.equal(g.errors().length, 0)
+  assert.equal(g.plant().protectFruit, true, 'an empty plot now carries a fruit protection')
 })

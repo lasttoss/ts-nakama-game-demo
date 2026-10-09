@@ -215,7 +215,7 @@ make chart     # helm lint --strict + helm template
 `npm test` is `node --test test/*.test.mjs` - the runner in the runtime, no framework, no config:
 
 ```
-tests 29 · pass 29 · fail 0
+tests 43 · pass 43 · fail 0
 ```
 
 The first fifteen cover the plugin's helpers - the clocks, the mappers, the room picker. The rest call the
@@ -234,7 +234,16 @@ What the handler tests pin, and why they are worth reading next to the API in `l
   the wrong way round and now has right. The pair of tests here - one on each side of the countdown - is
   the same pair, written against the implementation that was always correct.
 
-Two things the handler tests recorded rather than changed. The refill reads its guard from
+Three things the handler tests recorded rather than changed. Picking a fruit hands over nothing:
+`pickingFruitHandle` resets the plant, writes the inventory it read back unchanged, and nothing in this
+repository reads `FRUIT_REWARD_TYPE` or gives a fruit - while the Java API picks one by rate and adds it.
+And a protection is a flag nobody reads: `protectCoin`, `protectWater` and `protectFruit` are set, shipped
+to the client and never consulted by any rule, and `shieldTimes` is only ever defaulted and mapped. A
+player spends a shield and gets a field: the same is true of the API's three flags, so the enforcement is
+missing from both implementations rather than from one. Nor does this handler look at the plant's status,
+where the API refuses to protect one that is not ripe, so a shield can be spent on an empty plot.
+
+Two more the handler tests recorded rather than changed. The refill reads its guard from
 `state.nextTimeGetADropOfWater` and its arithmetic from the stored row, so a state that is due while
 storage is not subtracts drops the player never spent; the paths that write the state keep the two within
 one interval of each other, which is why it cannot happen today. And `findAllSeedConfig` returns null when

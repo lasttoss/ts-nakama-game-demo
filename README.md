@@ -159,3 +159,33 @@ handed a room whose label merely starts like theirs), the clock helpers, the amo
 the storage-object-to-DTO mappers, including the shop mapper's "not on sale" filter and its
 behaviour when the item config is empty. CI runs them on every push, before the end-to-end test that
 loads the plugin into a real Nakama container.
+
+## The plugin as a picture
+
+```mermaid
+%% Source for docs/diagrams/plugin-and-play.html
+%% What the host registers once, and what happens on the first login and every one after it.
+flowchart LR
+  IM["InitModule<br/>the one entry point"] --> RPC["4 RPC entry points"]
+  IM --> HOOK["after-authenticate hook<br/>device login"]
+  IM --> MH["authoritative match handler"]
+  DL["device login"] --> HOOK --> H{"hasInit?"}
+  H -->|"first time only"| W["seed wallet +<br/>account metadata"]
+  RPC --> CO["controllers<br/>use cases"] --> RE["repositories"] --> ST[("Nakama storage<br/>inventory · shop · energy")]
+  MH --> MATCH["per-player match<br/>owns the state"]
+  H -.->|"every later login"| NO["nothing to seed"]
+  classDef gate fill:#eef5ef,stroke:#1a6b3c,stroke-width:2px;
+  class H gate;
+```
+
+The architecture section shows the pieces; this draws the two things that are easy to get wrong when a
+plugin is written against a host. First, exactly three registrations — the RPCs, the after-authenticate hook
+and the match handler — because a host that calls into a plugin needs a fixed set of doors, and the hook is
+the one door that opens without anyone asking.
+
+Second, what that hook does: a new player is seeded exactly once, wallet and account metadata together,
+behind a named `hasInit` flag. If every entry point had to create a missing wallet, every entry point would
+need to know what a new player looks like, and one of them would eventually forget.
+
+`docs/diagrams/plugin-and-play.mmd` is the Mermaid source; `make diagram` exports a PNG if a browser is
+present.

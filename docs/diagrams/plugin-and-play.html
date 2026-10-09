@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>What the host registers once, and what happens on the first login</title>
+<style>
+  :root { --ink:#151412; --paper:#f7f4ee; --rule:#cfc7b8; --red:#b3261e; --green:#1a6b3c; --amber:#8a5a00; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+         font:16px/1.5 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+  .sheet { max-width:1080px; margin:0 auto; padding:56px 40px 72px; }
+  .kicker { font:600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing:.14em;
+            text-transform:uppercase; color:var(--amber); }
+  h1 { font-size:38px; line-height:1.15; margin:.35em 0 .2em; letter-spacing:-.01em; }
+  .dek { font-size:19px; color:#463f36; max-width:76ch; margin:0 0 8px; }
+  .meta { font:12px/1.6 ui-monospace, Menlo, monospace; color:#6b6357; border-top:1px solid var(--rule);
+          padding-top:10px; margin-top:22px; }
+  svg { display:block; width:100%; height:auto; margin:34px 0 0; }
+  .pairs { display:grid; grid-template-columns:1fr 1fr 1fr; gap:22px; margin-top:34px; }
+  .card { border-left:4px solid var(--ink); padding:14px 0 14px 18px; background:#fffdf8; }
+  .card b { display:block; font-size:12px; letter-spacing:.12em; text-transform:uppercase; margin-bottom:6px; }
+  .card p { margin:0; font-size:16px; } .card p + p { margin-top:7px; }
+  footer { margin-top:38px; font:12px/1.7 ui-monospace, Menlo, monospace; color:#6b6357;
+           border-top:1px solid var(--rule); padding-top:12px; }
+  text { font-family:"Iowan Old Style", Palatino, Georgia, serif; }
+  .mono { font-family:ui-monospace, Menlo, monospace; }
+</style>
+<div class="sheet">
+  <div class="kicker">Runtime · ts-nakama-game-demo</div>
+  <h1>What the host registers once, and what happens on the first login</h1>
+  <p class="dek">A Nakama plugin written in TypeScript: one module, three registrations, and a hook that
+    seeds a new player exactly once — so no RPC has to know what a new player looks like.</p>
+  <div class="meta">device login · after-authenticate hook guarded by a hasInit flag · server-authoritative
+    per-player match · inventory / shop / energy in Nakama storage collections · four RPCs</div>
+
+  <svg viewBox="0 0 1040 578" role="img" aria-label="InitModule registers four RPCs, an after-authenticate hook and a match handler; the hook seeds a new player once behind a hasInit guard, RPCs run controllers into repositories and storage, and the match handler owns the state">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" fill="#151412"/></marker>
+      <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" fill="#1a6b3c"/></marker>
+      <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" fill="#8a5a00"/></marker>
+    </defs>
+
+    <text x="20" y="26" font-size="12" letter-spacing="1.5" fill="#6b6357" class="mono">WHAT THE HOST REGISTERS — ONE MODULE, THREE REGISTRATIONS</text>
+    <rect x="20" y="40" width="170" height="152" rx="4" fill="#fffdf8" stroke="#151412" stroke-width="2"/>
+    <text x="34" y="66" font-size="14" font-weight="600">InitModule</text>
+    <text x="34" y="88" font-size="11" class="mono">the plugin's one</text>
+    <text x="34" y="106" font-size="11" class="mono">entry point: what</text>
+    <text x="34" y="124" font-size="11" class="mono">the host can call</text>
+    <text x="34" y="142" font-size="11" class="mono">the server for</text>
+    <text x="34" y="170" font-size="11" fill="#6b6357">everything else is</text>
+    <text x="34" y="184" font-size="11" fill="#6b6357">reached through these</text>
+
+    <rect x="300" y="40" width="330" height="44" rx="4" fill="#fffdf8" stroke="#151412"/>
+    <text x="314" y="60" font-size="13" font-weight="600">four RPC entry points</text>
+    <text x="314" y="76" font-size="11" class="mono">called by name, one use case each</text>
+    <rect x="300" y="94" width="330" height="44" rx="4" fill="#eef5ef" stroke="#1a6b3c" stroke-width="2"/>
+    <text x="314" y="114" font-size="13" font-weight="600" fill="#1a6b3c">after-authenticate hook</text>
+    <text x="314" y="130" font-size="11" class="mono">fires on device login, not on an RPC</text>
+    <rect x="300" y="148" width="330" height="44" rx="4" fill="#fffdf8" stroke="#151412"/>
+    <text x="314" y="168" font-size="13" font-weight="600">authoritative match handler</text>
+    <text x="314" y="184" font-size="11" class="mono">the host ticks it; it owns the state</text>
+
+    <path d="M190 96 L300 62" stroke="#151412" stroke-width="2" marker-end="url(#a)"/>
+    <path d="M190 106 L300 116" stroke="#1a6b3c" stroke-width="2" marker-end="url(#ag)"/>
+    <path d="M190 130 L300 170" stroke="#151412" stroke-width="2" marker-end="url(#a)"/>
+
+    <text x="652" y="66" font-size="12" fill="#6b6357">Three registrations, and no more: a host that</text>
+    <text x="652" y="86" font-size="12" fill="#6b6357">calls into a plugin needs a fixed set of doors.</text>
+    <text x="652" y="110" font-size="12" fill="#6b6357">The hook is the one that fires without anyone</text>
+    <text x="652" y="130" font-size="12" fill="#6b6357">asking for it, which is why the seeding below</text>
+    <text x="652" y="150" font-size="12" fill="#6b6357">has to be safe to skip.</text>
+    <text x="652" y="176" font-size="12" class="mono" fill="#8a5a00">config lives server-side:</text>
+    <text x="652" y="192" font-size="12" class="mono" fill="#8a5a00">items · shop · seeds · timers</text>
+
+    <text x="20" y="228" font-size="12" letter-spacing="1.5" fill="#6b6357" class="mono">THE FIRST LOGIN — SEEDED ONCE, BEHIND A FLAG</text>
+    <rect x="20" y="242" width="200" height="80" rx="4" fill="#fffdf8" stroke="#151412"/>
+    <text x="34" y="266" font-size="13" font-weight="600">device login</text>
+    <text x="34" y="288" font-size="11" class="mono">a device id is the</text>
+    <text x="34" y="306" font-size="11" class="mono">whole credential</text>
+    <rect x="250" y="242" width="230" height="80" rx="4" fill="#eef5ef" stroke="#1a6b3c" stroke-width="2"/>
+    <text x="264" y="266" font-size="13" font-weight="600" fill="#1a6b3c">after-authenticate</text>
+    <text x="264" y="288" font-size="11" class="mono">registerAfterAuthenticate</text>
+    <text x="264" y="306" font-size="11" class="mono">Device</text>
+    <rect x="510" y="242" width="180" height="80" rx="4" fill="#eef5ef" stroke="#1a6b3c" stroke-width="2"/>
+    <text x="524" y="266" font-size="13" font-weight="600" fill="#1a6b3c">hasInit?</text>
+    <text x="524" y="288" font-size="11" class="mono">the guard that makes</text>
+    <text x="524" y="306" font-size="11" class="mono">it once-only</text>
+    <rect x="720" y="242" width="300" height="80" rx="4" fill="#fffdf8" stroke="#151412"/>
+    <text x="734" y="266" font-size="13" font-weight="600">seed wallet + metadata</text>
+    <text x="734" y="288" font-size="11" class="mono">exactly once per new player — not on</text>
+    <text x="734" y="306" font-size="11" class="mono">every login, and not inside each RPC</text>
+
+    <path d="M220 282 L250 282" stroke="#151412" stroke-width="2" marker-end="url(#a)"/>
+    <path d="M480 282 L510 282" stroke="#1a6b3c" stroke-width="2" marker-end="url(#ag)"/>
+    <path d="M690 282 L720 282" stroke="#1a6b3c" stroke-width="2" marker-end="url(#ag)"/>
+    <path d="M600 322 L600 340 L140 340 L140 356" stroke="#8a5a00" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#ao)"/>
+    <text x="152" y="352" font-size="11" class="mono" fill="#8a5a00">every later login: nothing to seed, one read</text>
+
+    <text x="20" y="384" font-size="12" letter-spacing="1.5" fill="#6b6357" class="mono">EVERY RPC AFTER THAT — USE CASE, STORAGE, WIRE</text>
+    <rect x="20" y="398" width="190" height="76" rx="4" fill="#fffdf8" stroke="#151412"/>
+    <text x="34" y="422" font-size="13" font-weight="600">RPC</text>
+    <text x="34" y="444" font-size="11" class="mono">thin: parse, call,</text>
+    <text x="34" y="462" font-size="11" class="mono">serialise</text>
+    <rect x="240" y="398" width="200" height="76" rx="4" fill="#fffdf8" stroke="#151412"/>
+    <text x="254" y="422" font-size="13" font-weight="600">controllers</text>
+    <text x="254" y="444" font-size="11" class="mono">one use case each:</text>
+    <text x="254" y="462" font-size="11" class="mono">inventory, shop, energy</text>
+    <rect x="470" y="398" width="200" height="76" rx="4" fill="#fffdf8" stroke="#151412"/>
+    <text x="484" y="422" font-size="13" font-weight="600">repositories</text>
+    <text x="484" y="444" font-size="11" class="mono">storage access, and</text>
+    <text x="484" y="462" font-size="11" class="mono">mappers for the wire</text>
+    <rect x="700" y="398" width="320" height="76" rx="4" fill="#fffdf8" stroke="#8a5a00" stroke-width="2"/>
+    <text x="714" y="422" font-size="13" font-weight="600" fill="#8a5a00">Nakama storage collections</text>
+    <text x="714" y="444" font-size="11" class="mono">inventory · shop · energy live here,</text>
+    <text x="714" y="462" font-size="11" class="mono">so a restart of the node is not a reset</text>
+
+    <path d="M210 436 L240 436" stroke="#151412" stroke-width="2" marker-end="url(#a)"/>
+    <path d="M440 436 L470 436" stroke="#151412" stroke-width="2" marker-end="url(#a)"/>
+    <path d="M670 436 L700 436" stroke="#151412" stroke-width="2" marker-end="url(#a)"/>
+
+    <rect x="20" y="492" width="490" height="70" rx="4" fill="#fdeeed" stroke="#b3261e"/>
+    <text x="36" y="514" font-size="12" class="mono" fill="#b3261e">THE MATCH IS AUTHORITATIVE, THE CLIENT IS NOT</text>
+    <text x="36" y="536" font-size="12">Per player, one match, ticked by the host on the</text>
+    <text x="36" y="554" font-size="12">server: the state a client sees is the state it was told.</text>
+
+    <rect x="530" y="492" width="490" height="70" rx="4" fill="#fffdf8" stroke="#cfc7b8"/>
+    <text x="546" y="514" font-size="12" class="mono" fill="#8a5a00">THE 750ms THAT IS NOT A BUG</text>
+    <text x="546" y="536" font-size="12">A private room is found by index, and the index is</text>
+    <text x="546" y="554" font-size="12">eventually consistent: the reuse lands after ~750ms.</text>
+  </svg>
+
+  <div class="pairs">
+    <div class="card">
+      <b>Why the hook, not each RPC</b>
+      <p>If every entry point had to create a missing wallet, every entry point would need to know what a new
+        player looks like — and one of them would eventually forget. The hook is the single place a player is
+        born.</p>
+    </div>
+    <div class="card">
+      <b>Why the guard is explicit</b>
+      <p>The hook fires on every authenticate, so the seeding it does has to be safe to run again. A named
+        flag says that out loud, and the test that reads it back is what keeps it true.</p>
+    </div>
+    <div class="card">
+      <b>Where the state lives</b>
+      <p>Inventory, shop and energy live in storage collections rather than in the node's memory, so a restart
+        is not a reset. That is the same reason the match, not the client, owns the state.</p>
+    </div>
+  </div>
+
+  <footer>
+    Sources: docs/diagrams/plugin-and-play.mmd for the Mermaid version; main.ts and session_events.go for the
+    registrations and the hook; the README's "What this demonstrates" list, RPC section and test output for
+    the four entry points and the ~750ms indexed lookup. `make diagram` exports a PNG if a browser is present.
+  </footer>
+</div>

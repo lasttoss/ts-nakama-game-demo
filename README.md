@@ -139,3 +139,23 @@ would have stopped anybody from reproducing it:
 
 MIT - see [LICENSE](LICENSE). Nakama itself is Apache-2.0 (`heroiclabs/nakama`), and this
 repository links against `nakama-runtime` (Apache-2.0) - neither is redistributed here.
+
+## Tests
+
+```bash
+npm run build      # tsc: every file is a global script, concatenated into build/index.js
+npm test           # TZ=UTC node --test test/*.test.mjs
+```
+
+The project is written the template way: TypeScript concatenates every file into one bundle
+(`outFile`), so the functions are not importable. `test/unit.test.mjs` therefore runs the shipped
+artefact - `build/index.js` - inside a fresh VM context and calls what the server would call, which
+means the tests exercise the bundle that actually loads into Nakama rather than a second copy of
+the sources. A fake `Date` freezes the clock for anything time shaped, and a fake `nk` answers the
+storage read the config repositories need.
+
+15 tests over the pure logic: the room picker (including the regression that a player is never
+handed a room whose label merely starts like theirs), the clock helpers, the amount formatter, and
+the storage-object-to-DTO mappers, including the shop mapper's "not on sale" filter and its
+behaviour when the item config is empty. CI runs them on every push, before the end-to-end test that
+loads the plugin into a real Nakama container.

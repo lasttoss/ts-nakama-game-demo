@@ -117,7 +117,7 @@ jobs:
         run: make guard
       - name: The rendered manifest must keep its claims
         run: |
-          helm template dev charts/ts-nakama-game-demo > /tmp/render.yaml
+          helm template dev charts/ts-nakama-game-demo --set secret.allowMissing=true > /tmp/render.yaml
           # readOnlyRootFilesystem is deliberately not among them: this image carries the plugin and its
           # config under /nakama/data, so the chart cannot claim the container never writes.
           for claim in "maxUnavailable: 0" "minAvailable: 1" "automountServiceAccountToken: false" \

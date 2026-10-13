@@ -8,7 +8,7 @@ Everything runs from a clean clone with one command:
 
 ```
 $ make up
-  [PASS] server is healthy - http://127.0.0.1:7350
+  [PASS] server is healthy - http://127.0.0.1:17360
   [PASS] authenticate by device - user_id=df68d3e4-6e30-4f12-8949-eafe58edc23d
   [PASS] rpc get_user_energy - 50/50
   [PASS] rpc list_user_inventories - 0 entries

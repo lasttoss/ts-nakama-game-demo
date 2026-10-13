@@ -20,10 +20,10 @@ build: ## Compile the TypeScript plugin into build/index.js
 	npm install && npx tsc
 
 console: ## Where the Nakama console is
-	@PORT=$$(grep -E '^CONSOLE_PORT=' .env 2>/dev/null | cut -d= -f2); echo "http://127.0.0.1:$${PORT:-7351} (user: admin, password: from local.yml)"
+	@PORT=$$(grep -E '^CONSOLE_PORT=' .env 2>/dev/null | cut -d= -f2); echo "http://127.0.0.1:$${PORT:-17361} (user: admin, password: from local.yml)"
 
 smoke: ## End-to-end smoke test against a running stack
-	@PORT=$$(grep -E '^NAKAMA_PORT=' .env 2>/dev/null | cut -d= -f2); node scripts/smoke.mjs 127.0.0.1 $${PORT:-7350}
+	@PORT=$$(grep -E '^NAKAMA_PORT=' .env 2>/dev/null | cut -d= -f2); node scripts/smoke.mjs 127.0.0.1 $${PORT:-17360}
 
 clean: ## Remove build output and container volumes
 	rm -rf build node_modules

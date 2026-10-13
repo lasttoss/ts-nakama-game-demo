@@ -11,6 +11,6 @@ COPY tsconfig.json main.ts ./
 COPY games/ ./games/
 RUN npx tsc
 
-FROM heroiclabs/nakama:3.32.0
+FROM heroiclabs/nakama:3.41.0
 COPY --from=plugin-builder /plugin/build/index.js /nakama/data/modules/build/index.js
 COPY local.yml /nakama/data/

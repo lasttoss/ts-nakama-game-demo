@@ -154,7 +154,7 @@ means the tests exercise the bundle that actually loads into Nakama rather than 
 the sources. A fake `Date` freezes the clock for anything time shaped, and a fake `nk` answers the
 storage read the config repositories need.
 
-15 tests over the pure logic: the room picker (including the regression that a player is never
+12 tests over the pure logic: the room picker (including the regression that a player is never
 handed a room whose label merely starts like theirs), the clock helpers, the amount formatter, and
 the storage-object-to-DTO mappers, including the shop mapper's "not on sale" filter and its
 behaviour when the item config is empty. CI runs them on every push, before the end-to-end test that
